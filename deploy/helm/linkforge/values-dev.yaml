@@ -1,0 +1,31 @@
+replicaCount: 1
+
+env:
+  environment: dev
+  logLevel: INFO
+  baseUrl: http://links.dev.example.com
+
+database:
+  external: false
+
+ingress:
+  enabled: true
+  hosts:
+    - host: links.dev.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+autoscaling:
+  enabled: false
+
+pdb:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

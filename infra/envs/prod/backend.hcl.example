@@ -1,0 +1,5 @@
+bucket         = "linkforge-tfstate-CHANGE-ME"
+key            = "linkforge/prod/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "linkforge-terraform-locks"
+encrypt        = true

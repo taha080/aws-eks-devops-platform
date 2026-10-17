@@ -1,0 +1,32 @@
+replicaCount: 1
+
+image:
+  repository: linkforge
+  tag: local
+  pullPolicy: IfNotPresent
+
+env:
+  environment: kind
+  logLevel: INFO
+  baseUrl: http://127.0.0.1:8080
+
+database:
+  external: false
+
+service:
+  type: NodePort
+  port: 80
+  targetPort: 8000
+  nodePort: 30080
+
+ingress:
+  enabled: false
+
+autoscaling:
+  enabled: false
+
+pdb:
+  enabled: false
+
+networkPolicy:
+  enabled: false

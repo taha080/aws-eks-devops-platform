@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "linkforge.fullname" . }}
+  labels:
+    {{- include "linkforge.labels" . | nindent 4 }}
+data:
+  LINKFORGE_ENVIRONMENT: {{ .Values.env.environment | quote }}
+  LINKFORGE_LOG_LEVEL: {{ .Values.env.logLevel | quote }}
+  LINKFORGE_BASE_URL: {{ .Values.env.baseUrl | quote }}
+  LINKFORGE_HOST: "0.0.0.0"
+  LINKFORGE_PORT: "8000"
+  {{- if not .Values.database.external }}
+  LINKFORGE_DATABASE_URL: "sqlite:////data/linkforge.db"
+  {{- end }}

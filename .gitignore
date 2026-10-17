@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Local config and data
+.env
+*.db
+data/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+backend.hcl
+*.tfvars
+!*.tfvars.example
+.terraform.tfstate.lock.info
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

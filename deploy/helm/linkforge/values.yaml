@@ -1,0 +1,122 @@
+replicaCount: 1
+
+image:
+  repository: linkforge
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  # Keep this aligned with the IRSA trust policy (namespace linkforge, name linkforge).
+  name: linkforge
+  # Set at deploy time from `terraform output -raw irsa_role_arn`.
+  roleArn: ""
+  annotations: {}
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/metrics"
+  prometheus.io/port: "8000"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+  nodePort: null
+
+ingress:
+  enabled: false
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+  hosts:
+    - host: links.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+env:
+  environment: production
+  logLevel: INFO
+  baseUrl: http://localhost:8000
+
+awsRegion: us-east-1
+
+# SQLite on an emptyDir is local and single-replica only. A shared database is
+# required before raising replicaCount or enabling the HPA.
+database:
+  external: false
+  existingSecret: ""
+  secretArn: ""
+
+apiToken:
+  existingSecret: ""
+  key: LINKFORGE_API_TOKEN
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+pdb:
+  enabled: false
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+probes:
+  liveness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 3
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  startup:
+    periodSeconds: 2
+    failureThreshold: 15
