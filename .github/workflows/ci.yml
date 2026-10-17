@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e "./app[dev]"
+      - name: Ruff
+        run: |
+          ruff check app
+          ruff format --check app
+      - name: Pytest
+        run: pytest app/tests
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Format and validate
+        run: bash scripts/terraform-validate.sh
+
+  helm:
+    name: Helm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint and template
+        run: bash scripts/helm-check.sh
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hadolint
+        run: |
+          curl -sSfL -o /tmp/hadolint \
+            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-Linux-x86_64
+          chmod +x /tmp/hadolint
+          /tmp/hadolint app/Dockerfile
+      - name: Build image
+        run: docker build -t linkforge:ci app
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e "./app[dev]"
+      - name: Bandit
+        run: bandit -r app/src -ll -q
+      - name: Install Trivy
+        run: |
+          version="0.76.0"
+          curl -sSfL -o /tmp/trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${version}/trivy_${version}_Linux-64bit.tar.gz"
+          sudo tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
+          trivy --version
+      - name: Trivy filesystem scan
+        run: trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --scanners vuln,misconfig,secret .

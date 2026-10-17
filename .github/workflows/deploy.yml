@@ -1,0 +1,145 @@
+name: Deploy
+
+# Manual only. The job checks for GitHub Actions secrets and exits successfully
+# when they are absent, so a repository with no AWS credentials stays green.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      image_tag:
+        description: Image tag. Defaults to the commit SHA.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        id: gate
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_LOCK_TABLE: ${{ secrets.TF_STATE_LOCK_TABLE }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in AWS_ROLE_ARN AWS_REGION TF_STATE_BUCKET TF_STATE_LOCK_TABLE; do
+            if [ -z "${!name}" ]; then
+              echo "Missing ${name}."
+              missing=1
+            fi
+          done
+          if [ "${missing}" -ne 0 ]; then
+            echo "configured=false" >> "${GITHUB_OUTPUT}"
+            echo "Deploy is gated. No AWS calls were made."
+            exit 0
+          fi
+          echo "configured=true" >> "${GITHUB_OUTPUT}"
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          terraform_wrapper: false
+
+      - uses: azure/setup-helm@v4
+        if: steps.gate.outputs.configured == 'true'
+
+      - name: Configure AWS credentials
+        if: steps.gate.outputs.configured == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform apply
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: infra/envs/${{ inputs.environment }}
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_LOCK_TABLE: ${{ secrets.TF_STATE_LOCK_TABLE }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          cat > backend.hcl <<EOF
+          bucket         = "${TF_STATE_BUCKET}"
+          key            = "linkforge/${{ inputs.environment }}/terraform.tfstate"
+          region         = "${AWS_REGION_VALUE}"
+          dynamodb_table = "${TF_STATE_LOCK_TABLE}"
+          encrypt        = true
+          EOF
+          terraform init -input=false -backend-config=backend.hcl
+          terraform apply -input=false -auto-approve
+
+      - name: Build and push image
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: infra/envs/${{ inputs.environment }}
+        env:
+          IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          tag="${IMAGE_TAG_INPUT:-${GITHUB_SHA}}"
+          repo="$(terraform output -raw ecr_repository_url)"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${repo%%/*}"
+          docker build -t "${repo}:${tag}" "${GITHUB_WORKSPACE}/app"
+          docker push "${repo}:${tag}"
+          echo "image_repo=${repo}" >> "${GITHUB_ENV}"
+          echo "image_tag=${tag}" >> "${GITHUB_ENV}"
+
+      # kubectl and Helm need a path to the API. The cluster endpoint is private
+      # unless endpoint_public_access is enabled for this environment.
+      - name: Configure kubectl and database secret
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: infra/envs/${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          cluster="$(terraform output -raw cluster_name)"
+          aws eks update-kubeconfig --name "${cluster}" --region "${AWS_REGION}"
+          kubectl create namespace linkforge --dry-run=client -o yaml | kubectl apply -f -
+          secret_arn="$(terraform output -raw rds_master_user_secret_arn)"
+          if [ -n "${secret_arn}" ]; then
+            aws secretsmanager get-secret-value \
+              --secret-id "${secret_arn}" \
+              --query SecretString \
+              --output text \
+              | python3 "${GITHUB_WORKSPACE}/scripts/render-db-url.py" > /tmp/linkforge-db-url
+            kubectl -n linkforge create secret generic linkforge-db \
+              --from-file=LINKFORGE_DATABASE_URL=/tmp/linkforge-db-url \
+              --dry-run=client -o yaml | kubectl apply -f -
+            rm -f /tmp/linkforge-db-url
+          fi
+
+      - name: Helm upgrade
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: infra/envs/${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          helm upgrade --install linkforge "${GITHUB_WORKSPACE}/deploy/helm/linkforge" \
+            --namespace linkforge \
+            --create-namespace \
+            -f "${GITHUB_WORKSPACE}/deploy/helm/linkforge/values-${{ inputs.environment }}.yaml" \
+            --set "image.repository=${image_repo}" \
+            --set "image.tag=${image_tag}" \
+            --set image.pullPolicy=IfNotPresent \
+            --set "serviceAccount.roleArn=$(terraform output -raw irsa_role_arn)"
+          kubectl -n linkforge rollout status deployment/linkforge --timeout=300s

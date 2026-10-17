@@ -1,0 +1,56 @@
+[project]
+name = "linkforge"
+version = "0.1.0"
+description = "Production-style URL shortener API for the LinkForge platform."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.143,<0.145",
+  "uvicorn[standard]>=0.32",
+  "pydantic-settings>=2.6",
+  "sqlalchemy>=2.0.36",
+  "prometheus-client>=0.21",
+  "psycopg[binary]>=3.2",
+  "boto3>=1.35",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "httpx>=0.28",
+  "ruff>=0.8",
+  "bandit>=1.8",
+]
+
+[project.scripts]
+linkforge = "linkforge.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --tb=short"
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:UserWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# FastAPI dependencies are declared as default arguments.
+ignore = ["B008"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]

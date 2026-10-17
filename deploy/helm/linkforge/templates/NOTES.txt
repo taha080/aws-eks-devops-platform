@@ -1,0 +1,25 @@
+LinkForge is installed in namespace {{ .Release.Namespace }}.
+
+Probes:
+  liveness   /healthz
+  readiness  /readyz
+  metrics    /metrics
+
+{{- if eq .Values.service.type "NodePort" }}
+
+NodePort {{ .Values.service.nodePort }} is published. With the kind cluster in deploy/kind, open http://127.0.0.1:8080/healthz.
+{{- else if .Values.ingress.enabled }}
+
+Ingress host: {{ (index .Values.ingress.hosts 0).host }}
+{{- else }}
+
+kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "linkforge.fullname" . }} 8000:{{ .Values.service.port }}
+{{- end }}
+
+{{- if not .Values.database.external }}
+
+This release uses SQLite on an emptyDir. Data is local to the pod and is lost when the pod is replaced. Use one replica.
+{{- else }}
+
+This release expects a shared database. Secret: {{ .Values.database.existingSecret | default "not set" }}.
+{{- end }}

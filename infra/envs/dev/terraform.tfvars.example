@@ -1,0 +1,5 @@
+aws_region = "us-east-1"
+# The API is private by default. To use kubectl from a laptop, allow only that network:
+# endpoint_public_access = true
+# public_access_cidrs    = ["203.0.113.10/32"]
+# admin_principal_arns = ["arn:aws:iam::<account-id>:role/PlatformAdmin"]
