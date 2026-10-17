@@ -62,7 +62,7 @@ jobs:
         with:
           terraform_wrapper: false
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         if: steps.gate.outputs.configured == 'true'
 
       - name: Configure AWS credentials
