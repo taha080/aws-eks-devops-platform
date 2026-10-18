@@ -638,7 +638,7 @@ input::placeholder { color: #8ea0b3; }
   transform-origin: left;
 }
 
-.gate-bar span.is-running { animation: fill 1.1s linear forwards; }
+.gate-bar span.is-running { animation: fill 2s linear forwards; }
 
 @keyframes fill { to { transform: scaleX(1); } }
 

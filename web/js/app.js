@@ -3,7 +3,7 @@
   const LF = window.LinkForge;
   const LINKS_KEY = "linkforge.links.v1";
   const SETTINGS_KEY = "linkforge.settings.v1";
-  const REDIRECT_MS = 1100;
+  const REDIRECT_MS = 2000;
   const EXAMPLES = [
     ["EKS docs", "https://docs.aws.amazon.com/eks/latest/userguide/what-is-eks.html"],
     ["FastAPI", "https://fastapi.tiangolo.com/"],
