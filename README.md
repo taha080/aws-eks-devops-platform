@@ -1,5 +1,7 @@
 # LinkForge on AWS EKS
 
+**Live demo:** [https://taha080.github.io/aws-eks-devops-platform/](https://taha080.github.io/aws-eks-devops-platform/)
+
 [![CI](https://github.com/taha080/aws-eks-devops-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/taha080/aws-eks-devops-platform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -9,7 +11,7 @@ Built by [Taha Ahsan](https://github.com/taha080).
 
 ## What it does
 
-The API stores a target URL under a short code and redirects callers to it.
+The API stores a target URL under a short code and redirects callers to it. The [live demo](https://taha080.github.io/aws-eks-devops-platform/) does the same in the browser: paste a URL, copy the short link, and open `#/code`, which counts a click and redirects. Give that page an API base URL and it calls this service instead.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -75,6 +77,7 @@ The managed node group sits in the private subnets. Public subnets are tagged fo
 
 ```text
 app/                     FastAPI service, tests, and Dockerfile
+web/                     Static demo published to GitHub Pages
 deploy/helm/linkforge/   Helm chart and dev, prod, and kind values
 deploy/kind/             kind cluster config
 deploy/prometheus/       Optional local scrape config
@@ -83,7 +86,7 @@ infra/modules/           vpc, eks, ecr, rds, iam-irsa, and the platform composit
 infra/envs/dev/          Small cluster, single NAT, no RDS
 infra/envs/prod/         Three AZs, NAT per AZ, Multi-AZ RDS
 scripts/                 Validate, kind deploy, and RDS URL rendering
-.github/workflows/       CI, plus a manual deploy workflow
+.github/workflows/       CI, manual AWS deploy, and GitHub Pages
 ```
 
 ## Run it locally
@@ -187,6 +190,8 @@ The AWS Load Balancer Controller is not installed by Terraform. The Ingress uses
 No job assumes a cloud role. Provider plugins are downloaded during `terraform init`, and validation does not call AWS.
 
 `.github/workflows/deploy.yml` is `workflow_dispatch` only. The first step checks that the four secrets exist. If any are missing it prints that and the rest of the job is skipped, so the workflow does not fail on a repository that has never been wired to AWS. When the secrets are present it applies the selected environment, pushes the image to ECR, and upgrades the Helm release. Treat the prod GitHub Environment as protected. `terraform apply -auto-approve` is what that manual run does.
+
+`.github/workflows/pages.yml` publishes `web/` to [GitHub Pages](https://taha080.github.io/aws-eks-devops-platform/) when `main` changes the site. It does not use AWS credentials, and it is not part of the CI jobs above.
 
 ## Cost and teardown
 
