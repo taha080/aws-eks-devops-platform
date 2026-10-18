@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LinkForge — URL shortener on EKS</title>
+    <meta
+      name="description"
+      content="Paste a long URL, get a short code, and follow it in the browser. LinkForge is a FastAPI shortener packaged for AWS EKS."
+    />
+    <meta name="theme-color" content="#090d12" />
+    <link rel="canonical" href="https://taha080.github.io/aws-eks-devops-platform/" />
+    <meta property="og:title" content="LinkForge" />
+    <meta
+      property="og:description"
+      content="A URL shortener you can try in the browser, and the EKS platform that runs the real API."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://taha080.github.io/aws-eks-devops-platform/" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#url">Skip to the shortener</a>
+    <div class="atmosphere" aria-hidden="true">
+      <span class="glow glow-a"></span>
+      <span class="glow glow-b"></span>
+    </div>
+
+    <header class="wrap site-header">
+      <div class="topbar">
+        <p class="eyebrow">FastAPI on EKS, with a demo that needs no server</p>
+        <nav aria-label="Page">
+          <a href="#demo">Demo</a>
+          <a href="#how">How it works</a>
+          <a href="#architecture">Architecture</a>
+          <a href="https://github.com/taha080/aws-eks-devops-platform" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </nav>
+      </div>
+      <div class="title-row">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+          <rect width="48" height="48" rx="14" fill="#101820" />
+          <g fill="none" stroke-linecap="round" stroke-width="2.6">
+            <path stroke="#2ee6c5" d="M20 29.2 16.8 32.4a6.2 6.2 0 0 1-8.8-8.8L12.4 19" />
+            <path stroke="#e7a15a" d="M28 18.8 31.2 15.6a6.2 6.2 0 0 1 8.8 8.8L35.6 29" />
+            <path stroke="#f4f7fb" d="M21.2 26.8 26.8 21.2" />
+          </g>
+        </svg>
+        <h1>Link<em>Forge</em></h1>
+      </div>
+      <p class="lede">
+        Paste a long URL. Get a short code, a click count, and a redirect. This page does that in the browser. The
+        repository runs the same idea as a FastAPI service on Kubernetes.
+      </p>
+    </header>
+
+    <main>
+      <section id="demo" class="wrap layout" aria-labelledby="demo-title">
+        <div class="panel">
+          <div class="panel-head">
+            <h2 id="demo-title">Shorten a link</h2>
+            <p>Leave the API closed and nothing leaves this browser. A hash such as <span class="mono">#/abc1234</span> is the short link.</p>
+          </div>
+          <form id="composer" novalidate>
+            <label for="url">Long URL</label>
+            <input
+              id="url"
+              name="url"
+              type="text"
+              inputmode="url"
+              autocomplete="url"
+              spellcheck="false"
+              placeholder="https://docs.aws.amazon.com/eks/"
+            />
+            <label for="code">Custom code <span>optional</span></label>
+            <input
+              id="code"
+              name="code"
+              type="text"
+              maxlength="32"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              placeholder="3-32 characters, or leave blank"
+            />
+            <p id="form-error" class="form-error" role="alert" hidden></p>
+            <div class="composer-bar">
+              <p id="storage-hint" class="hint">Stored in this browser. Nothing is uploaded.</p>
+              <button id="shorten" class="shorten-btn" type="submit">Shorten</button>
+            </div>
+          </form>
+
+          <div class="examples">
+            <p id="examples-label">Try a URL</p>
+            <div id="chips" class="chips" role="group" aria-labelledby="examples-label"></div>
+          </div>
+
+          <details class="method" id="api-panel">
+            <summary>Use a LinkForge API</summary>
+            <form id="api-form">
+              <p>
+                Optional. Creating a link calls <span class="mono">POST /v1/links</span>. The list calls
+                <span class="mono">GET /v1/links</span>. Delete calls <span class="mono">DELETE /v1/links/{code}</span>.
+                Open follows the API redirect at <span class="mono">GET /{code}</span>. You can also land here with
+                <span class="mono">?api=</span> and the base URL.
+              </p>
+              <label for="api-base">API base URL</label>
+              <input id="api-base" type="text" inputmode="url" spellcheck="false" placeholder="http://127.0.0.1:8000" autocomplete="off" />
+              <label for="api-token">Bearer token <span>optional</span></label>
+              <input id="api-token" type="password" autocomplete="off" placeholder="Only if LINKFORGE_API_TOKEN is set" />
+              <p id="api-status" class="hint">Not connected. The demo is using this browser.</p>
+              <p id="api-error" class="form-error" role="alert" hidden></p>
+              <div class="api-actions">
+                <button id="api-connect" class="quiet-btn" type="submit">Connect</button>
+                <button id="api-disconnect" class="quiet-btn" type="button">Use this browser</button>
+                <button id="api-forget" class="quiet-btn" type="button" hidden>Remove saved token</button>
+              </div>
+              <p class="hint">
+                The token stays in this browser. The API must allow this page's origin in
+                <span class="mono">LINKFORGE_CORS_ORIGINS</span>. Write routes stay open when the token is empty.
+              </p>
+            </form>
+          </details>
+        </div>
+
+        <section class="ticket" id="ledger" aria-labelledby="ledger-title">
+          <div class="ticket-brand">
+            <span>LinkForge</span>
+            <span id="ledger-mode">This browser</span>
+          </div>
+          <h2 id="ledger-title" class="sr-only">Your links</h2>
+          <p class="stats" id="stats">0 links · 0 clicks</p>
+          <p id="ledger-note" class="ledger-note" hidden></p>
+          <div id="empty" class="placeholder">
+            <p id="empty-kicker" class="placeholder-kicker">No links yet</p>
+            <p id="empty-copy">Shorten a URL. The code, the click count, and the short link land here.</p>
+            <ol>
+              <li>A short code</li>
+              <li>A click count that moves when the link is opened</li>
+              <li>Copy, and Open, which redirects</li>
+            </ol>
+          </div>
+          <div id="list" class="link-list"></div>
+        </section>
+      </section>
+
+      <section id="how" class="wrap band" aria-labelledby="how-title">
+        <div class="band-head">
+          <p class="eyebrow">Same job, two places</p>
+          <h2 id="how-title">How it works</h2>
+          <p>
+            The card above stores the map in this browser. The service in the repository stores it in SQLite or
+            PostgreSQL and answers with HTTP.
+          </p>
+        </div>
+        <ol class="steps">
+          <li class="step">
+            <p class="step-num">01</p>
+            <h3>Paste</h3>
+            <p>An http or https URL, up to 2048 characters. Add a custom code, or leave that field blank.</p>
+          </li>
+          <li class="step">
+            <p class="step-num">02</p>
+            <h3>Mint</h3>
+            <p>Blank codes are 7 characters, letters and digits. Probe and docs names are reserved, same as the API.</p>
+          </li>
+          <li class="step">
+            <p class="step-num">03</p>
+            <h3>Keep</h3>
+            <p>This page writes localStorage. Connect a base URL and the form calls <span class="mono">POST /v1/links</span> instead.</p>
+          </li>
+          <li class="step">
+            <p class="step-num">04</p>
+            <h3>Follow</h3>
+            <p>Open <span class="mono">#/abc1234</span>. The page counts a click and redirects. The API does that with a 302.</p>
+          </li>
+        </ol>
+        <div class="table-wrap">
+          <table class="routes">
+            <caption>What the browser demo does, and what the API does</caption>
+            <thead>
+              <tr>
+                <th scope="col">Step</th>
+                <th scope="col">This page</th>
+                <th scope="col">LinkForge API</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Create</th>
+                <td>Saved in this browser</td>
+                <td><span class="mono">POST /v1/links</span></td>
+              </tr>
+              <tr>
+                <th scope="row">List</th>
+                <td>The card on this page</td>
+                <td><span class="mono">GET /v1/links</span></td>
+              </tr>
+              <tr>
+                <th scope="row">Redirect</th>
+                <td><span class="mono">#/code</span> on this origin</td>
+                <td><span class="mono">GET /{code}</span> returns 302</td>
+              </tr>
+              <tr>
+                <th scope="row">Clicks</th>
+                <td>Counted in localStorage</td>
+                <td>Counted in SQLite or PostgreSQL</td>
+              </tr>
+              <tr>
+                <th scope="row">Auth</th>
+                <td>None</td>
+                <td>Bearer token when <span class="mono">LINKFORGE_API_TOKEN</span> is set</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="architecture" class="wrap band" aria-labelledby="architecture-title">
+        <div class="band-head">
+          <p class="eyebrow">On AWS</p>
+          <h2 id="architecture-title">Architecture</h2>
+          <p>
+            Terraform builds the account. GitHub Actions ships the image. Helm runs FastAPI on EKS. The nodes sit in
+            private subnets.
+          </p>
+        </div>
+
+        <div class="map">
+          <div class="map-col">
+            <p class="map-kicker">Ship the image</p>
+            <ol class="rail">
+              <li>
+                <h3>GitHub Actions CI/CD</h3>
+                <p>Pull requests run lint, tests, the image build, Terraform, Helm, and scans. Deploy is manual.</p>
+              </li>
+              <li>
+                <h3>Docker</h3>
+                <p>Multi-stage image, non-root user, the same Dockerfile CI builds.</p>
+              </li>
+              <li>
+                <h3>ECR</h3>
+                <p>The registry the private nodes pull from.</p>
+              </li>
+              <li>
+                <h3>Helm</h3>
+                <p>Upgrades the release in the linkforge namespace.</p>
+              </li>
+            </ol>
+          </div>
+
+          <div class="vpc">
+            <p class="vpc-label"><span>Amazon VPC</span><span>Serve the click</span></p>
+            <div class="subnet public">
+              <p class="subnet-name">Public subnets</p>
+              <div class="subnet-nodes">
+                <article class="node">
+                  <p class="node-kicker">Ingress</p>
+                  <h3>ALB</h3>
+                  <p>Internet-facing load balancer. These subnets do not auto-assign public addresses.</p>
+                </article>
+                <article class="node">
+                  <p class="node-kicker">Egress</p>
+                  <h3>NAT</h3>
+                  <p>One gateway in dev. One per availability zone in prod.</p>
+                </article>
+              </div>
+            </div>
+            <p class="hop">Browser to ALB, then the Service, then the pods.</p>
+            <div class="subnet private">
+              <p class="subnet-name">Private subnets</p>
+              <div class="subnet-nodes">
+                <article class="node node-main">
+                  <p class="node-kicker">EKS / Kubernetes</p>
+                  <h3>LinkForge</h3>
+                  <p>FastAPI deployment installed with Helm. Probes, resources, HPA, and a disruption budget.</p>
+                </article>
+                <article class="node">
+                  <p class="node-kicker">RDS</p>
+                  <h3>PostgreSQL</h3>
+                  <p>Private. Prod turns it on. Dev keeps SQLite on an emptyDir.</p>
+                </article>
+              </div>
+            </div>
+          </div>
+
+          <aside class="platform">
+            <p class="map-kicker">Build the account</p>
+            <h3>Terraform</h3>
+            <ul class="pills">
+              <li>VPC</li>
+              <li>EKS</li>
+              <li>ECR</li>
+              <li>RDS</li>
+              <li>IAM and IRSA</li>
+              <li>S3 state and DynamoDB lock</li>
+            </ul>
+            <p>Modules under <span class="mono">infra/</span>. Dev is a small cluster. Prod is three zones and Multi-AZ RDS.</p>
+          </aside>
+        </div>
+
+        <div class="notes">
+          <article>
+            <h3>IRSA</h3>
+            <p>
+              Pods read the RDS secret from Secrets Manager with an IAM role. The password stays out of the image, the
+              chart, and the workflow log.
+            </p>
+          </article>
+          <article>
+            <h3>Dev and prod</h3>
+            <p>
+              Dev is one replica and a SQLite file. Prod is PostgreSQL, two or more replicas, an HPA, and a
+              PodDisruptionBudget. Helm will not render extra replicas on SQLite.
+            </p>
+          </article>
+          <article>
+            <h3>Pipelines</h3>
+            <p>
+              CI does not assume a cloud role. The AWS deploy workflow is manual and skips itself when secrets are
+              missing. This page is a third workflow, and it only uploads <span class="mono">web/</span>.
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap site-footer">
+      <p>
+        Built by
+        <a href="https://www.linkedin.com/in/taha-ahsan-832475270/" target="_blank" rel="noopener noreferrer">Taha Ahsan</a>
+        ·
+        <a href="https://github.com/taha080" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </p>
+    </footer>
+
+    <div id="gate" class="gate" hidden>
+      <div class="gate-card" role="dialog" aria-modal="true" aria-labelledby="gate-title">
+        <p id="gate-kicker" class="eyebrow">Short link</p>
+        <h2 id="gate-title">Taking you there</h2>
+        <p id="gate-copy"></p>
+        <p id="gate-url" class="gate-url"></p>
+        <div class="gate-bar" id="gate-bar" hidden><span></span></div>
+        <div class="gate-actions">
+          <a id="gate-go" class="shorten-btn" href="" rel="noopener noreferrer">Continue</a>
+          <button id="gate-stay" class="quiet-btn" type="button">Stay here</button>
+        </div>
+      </div>
+    </div>
+
+    <noscript>LinkForge's demo needs JavaScript. The shortener still runs entirely in your browser once it is on.</noscript>
+    <script src="js/engine.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
