@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from linkforge import __version__
@@ -24,6 +24,7 @@ from linkforge.db import (
     resolve_database_url,
     session_factory,
 )
+from linkforge.landing import render_landing
 from linkforge.logconfig import configure_logging, request_id_var
 from linkforge.metrics import create_metrics
 
@@ -93,6 +94,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return response
         finally:
             request_id_var.reset(token)
+
+    @app.get("/", include_in_schema=False)
+    def landing(request: Request) -> HTMLResponse:
+        operational = True
+        session = request.app.state.session_factory()
+        try:
+            check_database(session)
+        except Exception:
+            operational = False
+            logger.warning("landing status check failed")
+        finally:
+            session.close()
+        return HTMLResponse(
+            render_landing(operational=operational),
+            headers={"cache-control": "no-store"},
+        )
 
     @app.get("/healthz", tags=["probes"])
     def healthz() -> dict[str, str]:

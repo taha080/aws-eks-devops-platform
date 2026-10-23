@@ -41,10 +41,11 @@ Codes are 3 to 32 characters: letters, digits, hyphens, and underscores. If you 
 
 A redirect looks up the code, increments `clicks`, and returns 302 with the target URL. Unknown codes return 404.
 
-Interactive docs are the usual FastAPI pages at `/docs` and `/redoc`.
+`GET /` returns an HTML landing page: the name LinkForge, a short description, a status indicator, and links to the live demo, `/docs`, `/healthz`, and the GitHub repository. The status reads Operational when the database check succeeds, and Database unavailable when it does not. That page stays HTTP 200 either way. Interactive docs are the usual FastAPI pages at `/docs` and `/redoc`.
 
 | Method | Path | What it does |
 | --- | --- | --- |
+| `GET` | `/` | HTML landing page with the name, status, demo, docs, health, and repository. |
 | `GET` | `/healthz` | Liveness. Returns `{"status":"ok"}`. |
 | `GET` | `/readyz` | Readiness. Runs `SELECT 1`. Returns 503 when the database check fails. |
 | `GET` | `/metrics` | Prometheus metrics for this process. |
@@ -54,7 +55,7 @@ Interactive docs are the usual FastAPI pages at `/docs` and `/redoc`.
 | `DELETE` | `/v1/links/{code}` | Delete a link. Returns 204. |
 | `GET` | `/{code}` | Redirect with 302 and count the click. |
 
-When `LINKFORGE_API_TOKEN` is empty, the link routes accept requests with no token. That is the local default. When the token is set, create, list, fetch, and delete require `Authorization: Bearer`. The token is compared with `secrets.compare_digest`. Redirects, `/healthz`, `/readyz`, and `/metrics` stay public.
+When `LINKFORGE_API_TOKEN` is empty, the link routes accept requests with no token. That is the local default. When the token is set, create, list, fetch, and delete require `Authorization: Bearer`. The token is compared with `secrets.compare_digest`. Redirects, `/`, `/healthz`, `/readyz`, and `/metrics` stay public.
 
 Every response includes `x-request-id`. The service uses the incoming header when the client sent one, and otherwise generates an id. Request logs are JSON. Probe and metrics requests are logged at debug; other requests are logged at info.
 
