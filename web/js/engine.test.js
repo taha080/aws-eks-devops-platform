@@ -46,6 +46,23 @@ assert.deepEqual(lf.normalizeBase("https://links.example.com/base/"), {
   ok: true,
   url: "https://links.example.com/base",
 });
+assert.equal(lf.DEFAULT_API_BASE, "https://linkforge-api-8n7y.onrender.com");
+assert.equal(lf.WAKE_TIMEOUT_MS >= 50000, true);
+assert.deepEqual(lf.normalizeBase(lf.DEFAULT_API_BASE), {
+  ok: true,
+  url: "https://linkforge-api-8n7y.onrender.com",
+});
+assert.equal(lf.isUnreachable(0), true);
+assert.equal(lf.isUnreachable(502), true);
+assert.equal(lf.isUnreachable(503), true);
+assert.equal(lf.isUnreachable(401), false);
+assert.equal(lf.isUnreachable(404), false);
+assert.equal(lf.isUnreachable(201), false);
+assert.equal(lf.nextProbeDelay(0, 40, 1), 400);
+assert.equal(lf.nextProbeDelay(0, 40, 2), -1);
+assert.equal(lf.nextProbeDelay(0, 60000, 1), 2000);
+assert.equal(lf.nextProbeDelay(503, 80, 1), 2000);
+assert.equal(lf.nextProbeDelay(401, 20, 1), -1);
 
 assert.equal(
   lf.pageBaseFrom("https://taha080.github.io/aws-eks-devops-platform/index.html?api=1#/abc1234"),

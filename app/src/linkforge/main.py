@@ -15,7 +15,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from linkforge import __version__
 from linkforge.api import router
-from linkforge.config import Settings, get_settings
+from linkforge.config import PAGES_ORIGIN, Settings, get_settings
 from linkforge.db import (
     check_database,
     create_db_engine,
@@ -59,14 +59,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.metrics = create_metrics()
 
-    if settings.cors_origins:
-        origins = [item.strip() for item in settings.cors_origins.split(",") if item.strip()]
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=origins,
-            allow_methods=["GET", "POST", "DELETE"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-        )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_allowed_origins(settings),
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID"],
+    )
 
     @app.middleware("http")
     async def observe(request: Request, call_next):
@@ -136,6 +134,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(router)
     return app
+
+
+def _allowed_origins(settings: Settings) -> list[str]:
+    """Origins for browser calls. The public Pages origin is always included."""
+    origins: list[str] = []
+    for item in settings.cors_origins.split(","):
+        origin = item.strip()
+        if origin and origin not in origins:
+            origins.append(origin)
+    if PAGES_ORIGIN not in origins:
+        origins.append(PAGES_ORIGIN)
+    return origins
 
 
 def _database_label(url: str) -> str:

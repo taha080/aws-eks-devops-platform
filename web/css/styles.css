@@ -270,6 +270,21 @@ input::placeholder { color: #8ea0b3; }
 
 .hint { margin: 0; font-size: 0.92rem; }
 
+@keyframes wake-pulse {
+  50% { opacity: 0.55; }
+}
+
+.hint.is-waking {
+  color: var(--teal);
+  animation: wake-pulse 1.6s ease-in-out infinite;
+}
+
+#ledger-mode.is-waking { color: #0f766e; }
+
+.composer-bar .hint { flex: 1; }
+
+.composer-bar .shorten-btn { flex-shrink: 0; }
+
 .shorten-btn, .quiet-btn, .chip, .ghost {
   font: inherit;
   cursor: pointer;

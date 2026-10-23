@@ -2,6 +2,9 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Public GitHub Pages origin. Always sent as an allowed CORS origin.
+PAGES_ORIGIN = "https://taha080.github.io"
+
 
 class Settings(BaseSettings):
     """Process configuration.
@@ -28,7 +31,8 @@ class Settings(BaseSettings):
     db_secret_arn: str = ""
     aws_region: str = ""
     api_token: str = ""
-    cors_origins: str = ""
+    # Extra comma-separated origins. PAGES_ORIGIN is always allowed in addition.
+    cors_origins: str = PAGES_ORIGIN
 
 
 def get_settings() -> Settings:
