@@ -4,6 +4,8 @@ A URL shortener you can try in the browser, with the API, container, Helm chart,
 
 **Live demo:** [https://taha080.github.io/aws-eks-devops-platform/](https://taha080.github.io/aws-eks-devops-platform/)
 
+**Live API:** [https://linkforge-api-8n7y.onrender.com](https://linkforge-api-8n7y.onrender.com)
+
 [![CI](https://github.com/taha080/aws-eks-devops-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/taha080/aws-eks-devops-platform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -13,10 +15,10 @@ Built by [Taha Ahsan](https://github.com/taha080).
 
 LinkForge stores a long web address under a short code and sends visitors to the original address. The project has two parts that do that job in different places:
 
-- The [GitHub Pages site](https://taha080.github.io/aws-eks-devops-platform/) is a static page. By default it keeps your links in the browser. A short link looks like `#/code` on that page. You can point the page at a running API if you have one.
+- The [GitHub Pages site](https://taha080.github.io/aws-eks-devops-platform/) is a static page. By default it calls the [live API](https://linkforge-api-8n7y.onrender.com). If that API is unreachable, including while a free instance is waking up, the page keeps links in the browser. An API short link is the service URL. A browser short link looks like `#/code` on the page. You can point the page at a different API.
 - The API in `app/` is a Python service. It stores links in SQLite or PostgreSQL, counts clicks, and answers HTTP. The rest of the repository packages that service: a container image, a Helm chart, Terraform for AWS, and GitHub Actions workflows.
 
-The Pages site is the public demo. It runs in the browser and calls a LinkForge API only after you give it an address.
+The Pages site is the public demo. It uses the live API first, and falls back to the browser when the API does not answer.
 
 ## Features
 
@@ -39,10 +41,11 @@ Codes are 3 to 32 characters: letters, digits, hyphens, and underscores. If you 
 
 A redirect looks up the code, increments `clicks`, and returns 302 with the target URL. Unknown codes return 404.
 
-Interactive docs are the usual FastAPI pages at `/docs` and `/redoc`.
+`GET /` returns an HTML landing page: the name LinkForge, a short description, a status indicator, and links to the live demo, `/docs`, `/healthz`, and the GitHub repository. The status reads Operational when the database check succeeds, and Database unavailable when it does not. That page stays HTTP 200 either way. Interactive docs are the usual FastAPI pages at `/docs` and `/redoc`.
 
 | Method | Path | What it does |
 | --- | --- | --- |
+| `GET` | `/` | HTML landing page with the name, status, demo, docs, health, and repository. |
 | `GET` | `/healthz` | Liveness. Returns `{"status":"ok"}`. |
 | `GET` | `/readyz` | Readiness. Runs `SELECT 1`. Returns 503 when the database check fails. |
 | `GET` | `/metrics` | Prometheus metrics for this process. |
@@ -52,19 +55,19 @@ Interactive docs are the usual FastAPI pages at `/docs` and `/redoc`.
 | `DELETE` | `/v1/links/{code}` | Delete a link. Returns 204. |
 | `GET` | `/{code}` | Redirect with 302 and count the click. |
 
-When `LINKFORGE_API_TOKEN` is empty, the link routes accept requests with no token. That is the local default. When the token is set, create, list, fetch, and delete require `Authorization: Bearer`. The token is compared with `secrets.compare_digest`. Redirects, `/healthz`, `/readyz`, and `/metrics` stay public.
+When `LINKFORGE_API_TOKEN` is empty, the link routes accept requests with no token. That is the local default. When the token is set, create, list, fetch, and delete require `Authorization: Bearer`. The token is compared with `secrets.compare_digest`. Redirects, `/`, `/healthz`, `/readyz`, and `/metrics` stay public.
 
 Every response includes `x-request-id`. The service uses the incoming header when the client sent one, and otherwise generates an id. Request logs are JSON. Probe and metrics requests are logged at debug; other requests are logged at info.
 
-Set `LINKFORGE_CORS_ORIGINS` to a comma-separated list of origins to allow browser calls. The allowed methods are GET, POST, and DELETE.
+The API always allows browser calls from `https://taha080.github.io`. Set `LINKFORGE_CORS_ORIGINS` to a comma-separated list of additional origins. The allowed methods are GET, POST, and DELETE.
 
 Metrics use a registry created for that process, so tests do not share counters. The names are `linkforge_http_requests_total`, `linkforge_http_request_duration_seconds`, `linkforge_links_created_total`, and `linkforge_redirects_total` (labeled `hit` or `miss`).
 
 ### The browser demo
 
-`web/` is a static site. With no API configured, creating a link writes it to `localStorage`, keeping the newest 200. Opening `#/code` counts a click in the browser and then redirects. If the browser asks for reduced motion, the page waits until you choose Continue. The page and the API use the same limits: http and https only, 2048 characters, and the same code pattern and reserved names.
+`web/` is a static site. By default it uses the live API at `https://linkforge-api-8n7y.onrender.com`. Creating a link calls that API. If the API cannot be reached, the page writes `localStorage`, keeping the newest 200, and says so. A free Render instance can take about 50 seconds to wake; the page shows “Waking server” while it waits. Opening `#/code` counts a click in the browser and then redirects. If the browser asks for reduced motion, the page waits until you choose Continue. The page and the API use the same limits: http and https only, 2048 characters, and the same code pattern and reserved names.
 
-The “Use a LinkForge API” panel, or a `?api=` query on the page URL, switches the page to `POST /v1/links`, `GET /v1/links`, and `DELETE /v1/links/{code}`. Open then follows the API redirect. A bearer token, if you type one, stays in this browser. The API must list this page’s origin in `LINKFORGE_CORS_ORIGINS`.
+The “Use a LinkForge API” panel, or a `?api=` query on the page URL, points the page at a different base URL. “Use this browser” turns the live API off for later visits. While the API is in use, the page calls `POST /v1/links`, `GET /v1/links`, and `DELETE /v1/links/{code}`. Open then follows the API redirect. A bearer token, if you type one, stays in this browser. The API always allows `https://taha080.github.io`. Set `LINKFORGE_CORS_ORIGINS` to add more origins.
 
 ### Stack
 
@@ -152,7 +155,7 @@ Settings come from environment variables prefixed with `LINKFORGE_`, or from a `
 | `LINKFORGE_DB_SECRET_ARN` | empty | RDS-managed secret to read when the URL is empty. |
 | `LINKFORGE_AWS_REGION` | empty | Region for that Secrets Manager call. |
 | `LINKFORGE_API_TOKEN` | empty | Bearer token for link management routes. |
-| `LINKFORGE_CORS_ORIGINS` | empty | Comma-separated browser origins. |
+| `LINKFORGE_CORS_ORIGINS` | `https://taha080.github.io` | Comma-separated browser origins. The GitHub Pages origin is always included. |
 
 Database choice, in order:
 
@@ -241,7 +244,7 @@ curl -s -X POST localhost:8000/v1/links \
 
 Delete with `curl -X DELETE localhost:8000/v1/links/demo`.
 
-On the [live demo](https://taha080.github.io/aws-eks-devops-platform/), paste an http or https URL, optionally type a code, and choose Shorten. Copy copies the short link. Open follows `#/code`. To use your API from that page, open “Use a LinkForge API”, enter the base URL (or visit the page with `?api=` set to that URL), and connect.
+On the [live demo](https://taha080.github.io/aws-eks-devops-platform/), paste an http or https URL, optionally type a code, and choose Shorten. The page calls the [live API](https://linkforge-api-8n7y.onrender.com) and shows “Waking server” while a free instance starts. If the API does not answer, the link stays in the browser. Copy copies the short link. Open follows the API redirect, or `#/code` when the link is local. To use a different API, open “Use a LinkForge API”, enter the base URL (or visit the page with `?api=` set to that URL), and connect.
 
 ## Deploy to AWS
 

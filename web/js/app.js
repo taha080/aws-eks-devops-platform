@@ -1,4 +1,4 @@
-/* DOM for the LinkForge demo. Storage and redirects stay in the browser. */
+/* DOM for the LinkForge demo. The live API is the default; localStorage is the fallback. */
 (function () {
   const LF = window.LinkForge;
   const LINKS_KEY = "linkforge.links.v1";
@@ -47,6 +47,10 @@
   let remoteError = "";
   let redirectTimer = 0;
   let freshCode = "";
+  let sessionToken = 0;
+  let probePromise = null;
+  let waking = false;
+  let sessionFallback = false;
   const copyTimers = new WeakMap();
 
   function loadLinks() {
@@ -80,17 +84,43 @@
   }
 
   function loadSettings() {
-    const fallback = { baseUrl: "", token: "", transport: "browser" };
+    const fallback = { baseUrl: LF.DEFAULT_API_BASE, token: "", transport: "api" };
     try {
-      const parsed = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return fallback;
+      const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") return fallback;
-      const baseUrl = typeof parsed.baseUrl === "string" ? parsed.baseUrl : "";
       const token = typeof parsed.token === "string" ? parsed.token : "";
-      const transport = parsed.transport === "api" && baseUrl ? "api" : "browser";
-      return { baseUrl, token, transport };
+      if (parsed.transport === "browser") {
+        const baseUrl = typeof parsed.baseUrl === "string" ? parsed.baseUrl : "";
+        return { baseUrl, token, transport: "browser" };
+      }
+      const baseUrl =
+        typeof parsed.baseUrl === "string" && parsed.baseUrl.trim()
+          ? parsed.baseUrl.trim()
+          : LF.DEFAULT_API_BASE;
+      return { baseUrl, token, transport: "api" };
     } catch {
       return fallback;
     }
+  }
+
+  function activeSettings() {
+    const settings = loadSettings();
+    if (sessionFallback && settings.transport === "api") {
+      return {
+        baseUrl: settings.baseUrl,
+        token: settings.token,
+        transport: "browser",
+        unreachable: true,
+      };
+    }
+    return {
+      baseUrl: settings.baseUrl,
+      token: settings.token,
+      transport: settings.transport,
+      unreachable: false,
+    };
   }
 
   function saveSettings(settings) {
@@ -113,6 +143,18 @@
       window.clearTimeout(redirectTimer);
       redirectTimer = 0;
     }
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function invalidateApiSession() {
+    sessionToken += 1;
+    probePromise = null;
+    waking = false;
   }
 
   function setInert(on) {
@@ -138,6 +180,21 @@
     span.classList.remove("is-running");
     void span.offsetWidth;
     span.classList.add("is-running");
+  }
+
+  function showWakingGate(code) {
+    clearRedirectTimer();
+    gateKicker.textContent = "Short link";
+    gateTitle.textContent = "Waking server";
+    gateCopy.textContent = "The free instance is starting. This can take about 50 seconds.";
+    gateUrl.textContent = code ? `#/${code}` : "";
+    gateGo.hidden = true;
+    gateGo.removeAttribute("href");
+    gateBar.hidden = true;
+    gateStay.hidden = false;
+    gateStay.textContent = "Stay here";
+    showGate();
+    gateStay.focus();
   }
 
   function openMissing(code, message) {
@@ -188,6 +245,11 @@
   }
 
   function followCode(code) {
+    const persisted = loadSettings();
+    if (waking && persisted.transport === "api" && !sessionFallback) {
+      showWakingGate(code);
+      return;
+    }
     const links = loadLinks();
     const local = links.find((link) => link.code === code);
     if (local) {
@@ -206,16 +268,21 @@
       openRedirect(local.target_url, "local");
       return;
     }
-    const settings = loadSettings();
-    if (settings.transport === "api" && settings.baseUrl && LF.isValidCode(code)) {
+    const settings = activeSettings();
+    if (!settings.unreachable && settings.transport === "api" && settings.baseUrl && LF.isValidCode(code)) {
       openRedirect(`${settings.baseUrl.replace(/\/$/, "")}/${code}`, "api");
       return;
     }
-    openMissing(code);
+    openMissing(
+      code,
+      settings.unreachable
+        ? "The API was unreachable, and this code is not saved in this browser."
+        : undefined,
+    );
   }
 
-function route() {
-  const code = LF.parseHash(window.location.hash);
+  function route() {
+    const code = LF.parseHash(window.location.hash);
     if (!code) {
       clearRedirectTimer();
       closeGate();
@@ -385,21 +452,40 @@ function route() {
     return loadLinks();
   }
 
+  function syncApiBase(settings) {
+    if (apiBaseInput.dataset.touched === "yes") return;
+    apiBaseInput.value = settings.baseUrl || LF.DEFAULT_API_BASE;
+  }
+
   function render(highlightCode) {
-    const settings = loadSettings();
+    const settings = activeSettings();
     const apiMode = settings.transport === "api" && settings.baseUrl;
+    const showWaking = waking && !settings.unreachable;
     const links = currentLinks(settings);
     const clickTotal = links.reduce((sum, link) => sum + (Number(link.clicks) || 0), 0);
 
-    ledgerMode.textContent = apiMode ? `API · ${new URL(settings.baseUrl).host}` : "This browser";
-    storageHint.textContent = apiMode
-      ? "Saving to the API. Open follows its redirect."
-      : "Stored in this browser. Nothing is uploaded.";
-    apiStatus.textContent = apiMode
-      ? `Connected to ${settings.baseUrl}.`
-      : "Not connected. The demo is using this browser.";
+    ledgerMode.classList.toggle("is-waking", showWaking);
+    storageHint.classList.toggle("is-waking", showWaking);
+    composer.setAttribute("aria-busy", showWaking ? "true" : "false");
+    if (showWaking) {
+      ledgerMode.textContent = "Waking server";
+      storageHint.textContent = "Waking server…";
+      apiStatus.textContent = "Waking server… a free instance can take about 50 seconds.";
+    } else if (settings.unreachable) {
+      ledgerMode.textContent = "This browser";
+      storageHint.textContent = "The API was unreachable, so links stay in this browser.";
+      apiStatus.textContent = "Could not reach the API. This visit is using the browser. Reload to try the server again.";
+    } else if (apiMode) {
+      ledgerMode.textContent = `API · ${new URL(settings.baseUrl).host}`;
+      storageHint.textContent = "Saving to the API. Open follows its redirect.";
+      apiStatus.textContent = `Connected to ${settings.baseUrl}.`;
+    } else {
+      ledgerMode.textContent = "This browser";
+      storageHint.textContent = "Stored in this browser. Nothing is uploaded.";
+      apiStatus.textContent = "Not connected. The demo is using this browser.";
+    }
     apiForget.hidden = !settings.token;
-    if (!apiBaseInput.value && settings.baseUrl) apiBaseInput.value = settings.baseUrl;
+    syncApiBase(settings);
 
     stats.textContent = `${LF.plural(links.length, "link")} · ${LF.plural(clickTotal, "click")}`;
     list.replaceChildren();
@@ -409,7 +495,14 @@ function route() {
 
     const showEmpty = links.length === 0;
     empty.hidden = !showEmpty;
-    if (showEmpty && apiMode && remoteError) {
+    if (showEmpty && showWaking) {
+      emptyKicker.textContent = "Waking server";
+      emptyCopy.textContent =
+        "The free instance is starting. This can take about 50 seconds. If it does not answer, links stay in this browser.";
+    } else if (showEmpty && settings.unreachable) {
+      emptyKicker.textContent = "Using this browser";
+      emptyCopy.textContent = "The API was unreachable. Shorten a URL and it stays on this device.";
+    } else if (showEmpty && apiMode && remoteError) {
       emptyKicker.textContent = "The API did not answer";
       emptyCopy.textContent = remoteError;
     } else if (showEmpty && apiMode) {
@@ -446,15 +539,21 @@ function route() {
     headers.set("accept", "application/json");
     if (options && options.body) headers.set("content-type", "application/json");
     if (settings.token) headers.set("authorization", `Bearer ${settings.token}`);
+    const timeoutMs = options && options.timeoutMs ? options.timeoutMs : LF.WAKE_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
     let response;
     try {
       response = await fetch(`${settings.baseUrl.replace(/\/$/, "")}${path}`, {
         method: (options && options.method) || "GET",
         headers,
         body: options && options.body,
+        signal: controller.signal,
       });
     } catch {
       throw Object.assign(new Error("network"), { status: 0, payload: null });
+    } finally {
+      window.clearTimeout(timer);
     }
     if (response.status === 204) return null;
     const text = await response.text();
@@ -472,11 +571,109 @@ function route() {
     return payload;
   }
 
+  async function probeApi(settings) {
+    const deadline = Date.now() + LF.WAKE_TIMEOUT_MS;
+    let attempt = 0;
+    let lastError = Object.assign(new Error("network"), { status: 0, payload: null });
+    while (Date.now() < deadline) {
+      attempt += 1;
+      const started = Date.now();
+      const timeoutMs = Math.max(1, deadline - Date.now());
+      try {
+        await apiFetch(settings, "/healthz", { timeoutMs });
+        return;
+      } catch (error) {
+        lastError = error;
+        const wait = LF.nextProbeDelay(error.status, Date.now() - started, attempt);
+        if (wait < 0 || Date.now() + wait >= deadline) throw error;
+        await delay(wait);
+      }
+    }
+    throw lastError;
+  }
+
+  function ensureApi(settings) {
+    if (sessionFallback) return Promise.resolve(false);
+    if (!settings || settings.transport !== "api" || !settings.baseUrl) return Promise.resolve(false);
+    if (!probePromise) {
+      const session = sessionToken;
+      waking = true;
+      probePromise = probeApi(settings)
+        .then(() => {
+          if (session !== sessionToken) return false;
+          waking = false;
+          sessionFallback = false;
+          return true;
+        })
+        .catch((error) => {
+          if (session !== sessionToken) return false;
+          waking = false;
+          if (LF.isUnreachable(error.status)) {
+            sessionFallback = true;
+            remoteLinks = [];
+            remoteTotal = 0;
+            remoteError = "";
+            return false;
+          }
+          remoteError = LF.describeApiError(error.status, error.payload);
+          throw error;
+        });
+    }
+    return probePromise;
+  }
+
+  async function beginApiSession(settings) {
+    const session = sessionToken;
+    waking = true;
+    const code = LF.parseHash(window.location.hash);
+    if (code) showWakingGate(code);
+    render();
+    try {
+      const up = await ensureApi(settings);
+      if (session !== sessionToken) return;
+      if (up) await refreshRemote(settings);
+    } catch (error) {
+      if (session !== sessionToken) return;
+      if (!remoteError) remoteError = LF.describeApiError(error.status, error.payload);
+    }
+  }
+
   async function refreshRemote(settings) {
     const data = await apiFetch(settings, "/v1/links?limit=100");
     remoteLinks = data && Array.isArray(data.items) ? data.items : [];
     remoteTotal = data && Number.isFinite(data.count) ? data.count : remoteLinks.length;
     remoteError = "";
+  }
+
+  function saveLocalLink(targetUrl, requestedCode) {
+    const links = loadLinks();
+    const taken = new Set(links.map((link) => link.code));
+    let code = requestedCode;
+    if (code) {
+      if (taken.has(code)) {
+        fail("That code is already in this browser.");
+        return "";
+      }
+    } else {
+      code = LF.generateCode(taken);
+      if (!code) {
+        fail("Could not allocate a unique code. Try again.");
+        return "";
+      }
+    }
+    links.push({
+      code,
+      target_url: targetUrl,
+      clicks: 0,
+      created_at: new Date().toISOString(),
+    });
+    try {
+      saveLinks(links);
+    } catch {
+      fail("This browser blocked local storage, so the link was not saved.");
+      return "";
+    }
+    return code;
   }
 
   async function onSubmit(event) {
@@ -492,48 +689,53 @@ function route() {
       fail(codeResult.error);
       return;
     }
-    const settings = loadSettings();
+    const persisted = loadSettings();
     submitBtn.disabled = true;
     submitBtn.textContent = "Shortening…";
     try {
-      if (settings.transport === "api" && settings.baseUrl) {
-        const body = { target_url: target.url };
-        if (codeResult.code) body.code = codeResult.code;
-        const created = await apiFetch(settings, "/v1/links", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-        await refreshRemote(settings);
-        freshCode = created && created.code ? created.code : codeResult.code;
-      } else {
-        const links = loadLinks();
-        const taken = new Set(links.map((link) => link.code));
-        let code = codeResult.code;
-        if (code) {
-          if (taken.has(code)) {
-            fail("That code is already in this browser.");
-            return;
-          }
-        } else {
-          code = LF.generateCode(taken);
-          if (!code) {
-            fail("Could not allocate a unique code. Try again.");
-            return;
-          }
-        }
-        links.push({
-          code,
-          target_url: target.url,
-          clicks: 0,
-          created_at: new Date().toISOString(),
-        });
+      if (persisted.transport === "api" && persisted.baseUrl && !sessionFallback) {
+        if (waking || !probePromise) submitBtn.textContent = "Waking server…";
+        let up = false;
         try {
-          saveLinks(links);
-        } catch {
-          fail("This browser blocked local storage, so the link was not saved.");
+          up = await ensureApi(persisted);
+        } catch (error) {
+          fail(remoteError || LF.describeApiError(error.status, error.payload));
           return;
         }
-        freshCode = code;
+        const stillApi = loadSettings().transport === "api" && !sessionFallback;
+        if (!up || !stillApi) {
+          freshCode = saveLocalLink(target.url, codeResult.code);
+          if (!freshCode) return;
+        } else {
+          submitBtn.textContent = "Shortening…";
+          try {
+            const body = { target_url: target.url };
+            if (codeResult.code) body.code = codeResult.code;
+            const created = await apiFetch(persisted, "/v1/links", {
+              method: "POST",
+              body: JSON.stringify(body),
+            });
+            freshCode = created && created.code ? created.code : codeResult.code;
+            if (created && created.code) {
+              remoteLinks = [created].concat(remoteLinks.filter((link) => link.code !== created.code));
+            }
+            try {
+              await refreshRemote(persisted);
+            } catch (error) {
+              remoteError = LF.describeApiError(error.status, error.payload);
+            }
+          } catch (error) {
+            if (!LF.isUnreachable(error.status)) throw error;
+            sessionFallback = true;
+            probePromise = null;
+            waking = false;
+            freshCode = saveLocalLink(target.url, codeResult.code);
+            if (!freshCode) return;
+          }
+        }
+      } else {
+        freshCode = saveLocalLink(target.url, codeResult.code);
+        if (!freshCode) return;
       }
       urlInput.value = "";
       codeInput.value = "";
@@ -555,16 +757,24 @@ function route() {
       button.textContent = "Confirm";
       return;
     }
-    const settings = loadSettings();
+    const settings = activeSettings();
     if (settings.transport === "api") {
       button.disabled = true;
       button.textContent = "Deleting…";
       try {
-        await apiFetch(settings, `/v1/links/${encodeURIComponent(code)}`, { method: "DELETE" });
-        await refreshRemote(settings);
+        await apiFetch(loadSettings(), `/v1/links/${encodeURIComponent(code)}`, { method: "DELETE" });
+        await refreshRemote(loadSettings());
       } catch (error) {
         button.disabled = false;
         button.textContent = "Delete";
+        if (LF.isUnreachable(error.status)) {
+          sessionFallback = true;
+          probePromise = null;
+          waking = false;
+          fail("Could not reach the API, so this link was not deleted. New links will stay in this browser.");
+          render();
+          return;
+        }
         fail(LF.describeApiError(error.status, error.payload));
         return;
       }
@@ -591,27 +801,50 @@ function route() {
     const typed = apiTokenInput.value;
     const token = typed.trim() === "" ? existing.token : typed.trim();
     const next = { baseUrl: base.url, token, transport: "api" };
+    invalidateApiSession();
+    const session = sessionToken;
+    sessionFallback = false;
+    remoteError = "";
+    waking = true;
     apiConnect.disabled = true;
-    apiConnect.textContent = "Connecting…";
+    apiConnect.textContent = "Waking server…";
+    render();
     try {
+      const up = await ensureApi(next);
+      if (session !== sessionToken) return;
+      if (!up) {
+        showApiError("Could not reach the API. Links will stay in this browser.");
+        render();
+        return;
+      }
       await refreshRemote(next);
+      if (session !== sessionToken) return;
       saveSettings(next);
       apiTokenInput.value = "";
+      apiBaseInput.value = next.baseUrl;
+      apiBaseInput.dataset.touched = "no";
       freshCode = "";
       render();
     } catch (error) {
-      remoteError = LF.describeApiError(error.status, error.payload);
+      if (session !== sessionToken) return;
+      if (!remoteError) remoteError = LF.describeApiError(error.status, error.payload);
       showApiError(remoteError);
+      render();
     } finally {
-      apiConnect.disabled = false;
-      apiConnect.textContent = "Connect";
+      if (session === sessionToken) {
+        apiConnect.disabled = false;
+        apiConnect.textContent = "Connect";
+      }
     }
   }
 
   function disconnectApi() {
     const settings = loadSettings();
     settings.transport = "browser";
+    if (!settings.baseUrl) settings.baseUrl = LF.DEFAULT_API_BASE;
     saveSettings(settings);
+    invalidateApiSession();
+    sessionFallback = false;
     remoteError = "";
     clearApiError();
     freshCode = "";
@@ -631,6 +864,7 @@ function route() {
     const api = url.searchParams.get("api");
     if (!api) return false;
     apiBaseInput.value = api;
+    apiBaseInput.dataset.touched = "yes";
     url.searchParams.delete("api");
     const next = `${url.pathname}${url.search}${url.hash}`;
     window.history.replaceState(null, "", next);
@@ -656,13 +890,13 @@ function route() {
     });
   }
 
-function stayHere() {
-  clearRedirectTimer();
-  const alreadyHome = window.location.hash === "#demo" || window.location.hash === "";
-  closeGate();
-  render();
-  if (!alreadyHome) window.location.hash = "demo";
-}
+  function stayHere() {
+    clearRedirectTimer();
+    const alreadyHome = window.location.hash === "#demo" || window.location.hash === "";
+    closeGate();
+    render();
+    if (!alreadyHome) window.location.hash = "demo";
+  }
 
   function boot() {
     buildChips();
@@ -672,6 +906,10 @@ function stayHere() {
       syncChips();
     });
     codeInput.addEventListener("input", clearFormError);
+    apiBaseInput.addEventListener("input", () => {
+      apiBaseInput.dataset.touched = "yes";
+      clearApiError();
+    });
     $("api-form").addEventListener("submit", (event) => {
       event.preventDefault();
       connectToApi();
@@ -696,8 +934,11 @@ function stayHere() {
       }
       const settings = loadSettings();
       if (settings.transport === "api" && !LF.parseHash(window.location.hash)) {
+        invalidateApiSession();
+        sessionFallback = false;
         try {
-          await refreshRemote(settings);
+          const up = await ensureApi(settings);
+          if (up) await refreshRemote(settings);
         } catch (error) {
           remoteError = LF.describeApiError(error.status, error.payload);
         }
@@ -712,11 +953,7 @@ function stayHere() {
     }
     const settings = loadSettings();
     if (settings.transport === "api") {
-      refreshRemote(settings)
-        .catch((error) => {
-          remoteError = LF.describeApiError(error.status, error.payload);
-        })
-        .finally(route);
+      beginApiSession(settings).finally(route);
       return;
     }
     route();

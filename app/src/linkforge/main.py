@@ -10,12 +10,12 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from linkforge import __version__
 from linkforge.api import router
-from linkforge.config import Settings, get_settings
+from linkforge.config import PAGES_ORIGIN, Settings, get_settings
 from linkforge.db import (
     check_database,
     create_db_engine,
@@ -24,6 +24,7 @@ from linkforge.db import (
     resolve_database_url,
     session_factory,
 )
+from linkforge.landing import render_landing
 from linkforge.logconfig import configure_logging, request_id_var
 from linkforge.metrics import create_metrics
 
@@ -59,14 +60,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.metrics = create_metrics()
 
-    if settings.cors_origins:
-        origins = [item.strip() for item in settings.cors_origins.split(",") if item.strip()]
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=origins,
-            allow_methods=["GET", "POST", "DELETE"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-        )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_allowed_origins(settings),
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID"],
+    )
 
     @app.middleware("http")
     async def observe(request: Request, call_next):
@@ -95,6 +94,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return response
         finally:
             request_id_var.reset(token)
+
+    @app.get("/", include_in_schema=False)
+    def landing(request: Request) -> HTMLResponse:
+        operational = True
+        session = request.app.state.session_factory()
+        try:
+            check_database(session)
+        except Exception:
+            operational = False
+            logger.warning("landing status check failed")
+        finally:
+            session.close()
+        return HTMLResponse(
+            render_landing(operational=operational),
+            headers={"cache-control": "no-store"},
+        )
 
     @app.get("/healthz", tags=["probes"])
     def healthz() -> dict[str, str]:
@@ -136,6 +151,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(router)
     return app
+
+
+def _allowed_origins(settings: Settings) -> list[str]:
+    """Origins for browser calls. The public Pages origin is always included."""
+    origins: list[str] = []
+    for item in settings.cors_origins.split(","):
+        origin = item.strip()
+        if origin and origin not in origins:
+            origins.append(origin)
+    if PAGES_ORIGIN not in origins:
+        origins.append(PAGES_ORIGIN)
+    return origins
 
 
 def _database_label(url: str) -> str:

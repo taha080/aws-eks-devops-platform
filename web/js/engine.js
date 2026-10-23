@@ -9,6 +9,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const CODE_LENGTH = 7;
+  const DEFAULT_API_BASE = "https://linkforge-api-8n7y.onrender.com";
+  const WAKE_TIMEOUT_MS = 60000;
   const CODE_PATTERN = /^[A-Za-z0-9_-]{3,32}$/;
   const MAX_URL_LENGTH = 2048;
   const RESERVED = new Set(["healthz", "readyz", "metrics", "docs", "redoc", "openapi"]);
@@ -149,6 +151,21 @@
     return "";
   }
 
+  function isUnreachable(status) {
+    const code = Number(status) || 0;
+    return code === 0 || code >= 500;
+  }
+
+  // -1 means stop. A fast network failure (CORS, offline) should not burn the
+  // whole cold-start window. A hang or a 5xx keeps waiting.
+  function nextProbeDelay(status, elapsedMs, attempt) {
+    const code = Number(status) || 0;
+    if (!isUnreachable(code)) return -1;
+    if (code === 0 && elapsedMs < 1500 && attempt >= 2) return -1;
+    if (code === 0 && elapsedMs < 1500) return 400;
+    return 2000;
+  }
+
   function describeApiError(status, payload) {
     const detail = detailText(payload);
     if (!status) {
@@ -176,5 +193,9 @@
     parseHash,
     plural,
     describeApiError,
+    DEFAULT_API_BASE,
+    WAKE_TIMEOUT_MS,
+    isUnreachable,
+    nextProbeDelay,
   };
 });

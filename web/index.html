@@ -29,7 +29,7 @@
 
     <header class="wrap site-header">
       <div class="topbar">
-        <p class="eyebrow">FastAPI on EKS, with a demo that needs no server</p>
+        <p class="eyebrow">FastAPI on EKS, with a live API and a browser fallback</p>
         <nav aria-label="Page">
           <a href="#demo">Demo</a>
           <a href="#how">How it works</a>
@@ -49,8 +49,8 @@
         <h1>Link<em>Forge</em></h1>
       </div>
       <p class="lede">
-        Paste a long URL. Get a short code, a click count, and a redirect. This page does that in the browser. The
-        repository runs the same idea as a FastAPI service on Kubernetes.
+        Paste a long URL. Get a short code, a click count, and a redirect. This page uses the live API, and keeps the
+        link in this browser if that server does not answer. The repository runs the same service on Kubernetes.
       </p>
     </header>
 
@@ -59,7 +59,10 @@
         <div class="panel">
           <div class="panel-head">
             <h2 id="demo-title">Shorten a link</h2>
-            <p>Leave the API closed and nothing leaves this browser. A hash such as <span class="mono">#/abc1234</span> is the short link.</p>
+            <p>
+              Short links are saved on the live API. If that server is waking or unreachable, they stay in this
+              browser. A hash such as <span class="mono">#/abc1234</span> is the short link when the API is not in use.
+            </p>
           </div>
           <form id="composer" novalidate>
             <label for="url">Long URL</label>
@@ -85,7 +88,7 @@
             />
             <p id="form-error" class="form-error" role="alert" hidden></p>
             <div class="composer-bar">
-              <p id="storage-hint" class="hint">Stored in this browser. Nothing is uploaded.</p>
+              <p id="storage-hint" class="hint is-waking" role="status" aria-live="polite">Waking server…</p>
               <button id="shorten" class="shorten-btn" type="submit">Shorten</button>
             </div>
           </form>
@@ -99,16 +102,27 @@
             <summary>Use a LinkForge API</summary>
             <form id="api-form">
               <p>
-                Optional. Creating a link calls <span class="mono">POST /v1/links</span>. The list calls
+                This page already uses the live API. Point it somewhere else, or choose “Use this browser”. Creating a
+                link calls <span class="mono">POST /v1/links</span>. The list calls
                 <span class="mono">GET /v1/links</span>. Delete calls <span class="mono">DELETE /v1/links/{code}</span>.
                 Open follows the API redirect at <span class="mono">GET /{code}</span>. You can also land here with
                 <span class="mono">?api=</span> and the base URL.
               </p>
               <label for="api-base">API base URL</label>
-              <input id="api-base" type="text" inputmode="url" spellcheck="false" placeholder="http://127.0.0.1:8000" autocomplete="off" />
+              <input
+                id="api-base"
+                type="text"
+                inputmode="url"
+                spellcheck="false"
+                placeholder="https://linkforge-api-8n7y.onrender.com"
+                value="https://linkforge-api-8n7y.onrender.com"
+                autocomplete="off"
+              />
               <label for="api-token">Bearer token <span>optional</span></label>
               <input id="api-token" type="password" autocomplete="off" placeholder="Only if LINKFORGE_API_TOKEN is set" />
-              <p id="api-status" class="hint">Not connected. The demo is using this browser.</p>
+              <p id="api-status" class="hint" role="status" aria-live="polite">
+                Waking server… a free instance can take about 50 seconds.
+              </p>
               <p id="api-error" class="form-error" role="alert" hidden></p>
               <div class="api-actions">
                 <button id="api-connect" class="quiet-btn" type="submit">Connect</button>
@@ -126,14 +140,17 @@
         <section class="ticket" id="ledger" aria-labelledby="ledger-title">
           <div class="ticket-brand">
             <span>LinkForge</span>
-            <span id="ledger-mode">This browser</span>
+            <span id="ledger-mode" class="is-waking">Waking server</span>
           </div>
           <h2 id="ledger-title" class="sr-only">Your links</h2>
           <p class="stats" id="stats">0 links · 0 clicks</p>
           <p id="ledger-note" class="ledger-note" hidden></p>
           <div id="empty" class="placeholder">
-            <p id="empty-kicker" class="placeholder-kicker">No links yet</p>
-            <p id="empty-copy">Shorten a URL. The code, the click count, and the short link land here.</p>
+            <p id="empty-kicker" class="placeholder-kicker">Waking server</p>
+            <p id="empty-copy">
+              The free instance is starting. This can take about 50 seconds. If it does not answer, links stay in this
+              browser.
+            </p>
             <ol>
               <li>A short code</li>
               <li>A click count that moves when the link is opened</li>
@@ -149,8 +166,8 @@
           <p class="eyebrow">Same job, two places</p>
           <h2 id="how-title">How it works</h2>
           <p>
-            The card above stores the map in this browser. The service in the repository stores it in SQLite or
-            PostgreSQL and answers with HTTP.
+            The card above uses the live API, and stores the map in this browser when that API is unreachable. The
+            service stores links in SQLite or PostgreSQL and answers with HTTP.
           </p>
         </div>
         <ol class="steps">
@@ -167,12 +184,12 @@
           <li class="step">
             <p class="step-num">03</p>
             <h3>Keep</h3>
-            <p>This page writes localStorage. Connect a base URL and the form calls <span class="mono">POST /v1/links</span> instead.</p>
+            <p>The live API stores the link. If it is unreachable, this page writes localStorage instead.</p>
           </li>
           <li class="step">
             <p class="step-num">04</p>
             <h3>Follow</h3>
-            <p>Open <span class="mono">#/abc1234</span>. The page counts a click and redirects. The API does that with a 302.</p>
+            <p>Open the short link. On the API that is a 302. In this browser it is <span class="mono">#/code</span>, then a redirect.</p>
           </li>
         </ol>
         <div class="table-wrap">
@@ -188,7 +205,7 @@
             <tbody>
               <tr>
                 <th scope="row">Create</th>
-                <td>Saved in this browser</td>
+                <td>Live API, or this browser if it is unreachable</td>
                 <td><span class="mono">POST /v1/links</span></td>
               </tr>
               <tr>
@@ -198,12 +215,12 @@
               </tr>
               <tr>
                 <th scope="row">Redirect</th>
-                <td><span class="mono">#/code</span> on this origin</td>
+                <td>API 302, or <span class="mono">#/code</span> in this browser</td>
                 <td><span class="mono">GET /{code}</span> returns 302</td>
               </tr>
               <tr>
                 <th scope="row">Clicks</th>
-                <td>Counted in localStorage</td>
+                <td>API database, or localStorage</td>
                 <td>Counted in SQLite or PostgreSQL</td>
               </tr>
               <tr>
