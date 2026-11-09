@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - name: Lint and template
         run: bash scripts/helm-check.sh
 
